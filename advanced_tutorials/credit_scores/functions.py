@@ -26,7 +26,7 @@ def remove_nans(df):
     return df
 
 
-def get_subsample(df):
+def get_subsample(df, sample_size=0.25):
     '''
     Function which randomly selects 25% of input data
     
@@ -41,7 +41,7 @@ def get_subsample(df):
         25% of original DataFrame.
     
     '''
-    indexes = np.random.choice(df.index, int(df.shape[0] * 0.25), replace = False)
+    indexes = np.random.choice(df.index, int(df.shape[0] * sample_size), replace = False)
     return df.loc[indexes].reset_index(drop = True)
 
 
