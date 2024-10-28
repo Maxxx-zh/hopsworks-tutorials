@@ -1,17 +1,18 @@
 import pandas as pd
 
 def compute_ranking_dataset(trans_fg, articles_fg, customers_fg):
+    trans_df = trans_fg.select(["article_id", "customer_id", "month_sin", "month_cos"]).read()
+    articles_df = articles_fg.select_except(['article_description', 'embeddings', 'image_url']).read()
+    customers_df = customers_fg.select(["customer_id", "age"]).read()
+    
+    df = trans_df.merge(articles_df, on="article_id", how="left")
+    df = df.merge(customers_df, on="customer_id", how="left")
+    
     # Define the features used in the query
     query_features = ["customer_id", "age", "month_sin", "month_cos", "article_id"]
     
-    # Perform the necessary joins to create the feature set
-    fg_query = trans_fg.select(["month_sin", "month_cos"]).join(
-        articles_fg.select_except(['article_description', 'embeddings', 'image_url']), 
-        on=["article_id"],
-    ).join(customers_fg.select(["customer_id", "age"]))
-    df = fg_query.read()
     df = df[query_features]
-
+    
     # Copy the positive pairs for ranking
     positive_pairs = df.copy()
     
