@@ -92,9 +92,11 @@ def process_pending_interactions(tracker, fg_updater):
     
     if interaction_count >= 50:
         with st.spinner("🔄 Auto-inserting interactions..."):
-            fg_updater.process_interactions(tracker, force=False)
-        st.toast(f"✅ Auto-inserted {interaction_count} interactions", icon="📥")
-        logger.info(f"Auto-inserted {interaction_count} interactions")
+            success = fg_updater.process_interactions(tracker, force=True)
+            if success:
+                tracker.clear_interactions()  # Clear interactions after successful insertion
+                st.toast(f"✅ Auto-inserted {interaction_count} interactions", icon="📥")
+                logger.info(f"Auto-inserted {interaction_count} interactions")
     else:
         fg_updater.process_interactions(tracker, force=False)
 

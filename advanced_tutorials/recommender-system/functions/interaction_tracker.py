@@ -149,6 +149,11 @@ class InteractionTracker:
     def get_current_items(self, customer_id: str) -> List[str]:
         """Get current items for a customer"""
         return self.current_items.get(customer_id, [])
+    
+    def clear_interactions(self):
+        """Clear all recorded interactions while preserving purchased items"""
+        self.interactions.clear()
+        logger.info("Cleared all recorded interactions")
 
 def get_tracker():
     """Get or create InteractionTracker instance"""

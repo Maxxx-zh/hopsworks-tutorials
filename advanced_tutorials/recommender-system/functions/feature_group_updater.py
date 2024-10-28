@@ -115,24 +115,32 @@ class FeatureGroupUpdater:
 
         return False
     
-    def process_interactions(self, tracker, force: bool = False) -> None:
+    def process_interactions(self, tracker, force: bool = False) -> bool:
         """Process interactions from the tracker and insert into Feature Group"""
         try:
+            # Get new interactions
             new_interactions = self._get_new_interactions(tracker)
 
             if new_interactions is None:
                 if force:
-                    st.info("ℹ️ No new interactions to insert")
-                return
+                    logger.info("ℹ️ No new interactions to insert")
+                return False
 
             # Insert if forced or batch size reached
             if force or len(new_interactions) >= self.batch_size:
+                logger.info("Starting insertion...")
                 if self.insert_interactions(new_interactions):
-                    st.success(f"✅ Successfully inserted {len(new_interactions)} interactions!")
+                    logger.info(f"✅ Successfully inserted {len(new_interactions)} interactions")
+                    return True
+                else:
+                    logger.error("Failed to insert interactions")
+                    return False
 
         except Exception as e:
             logger.error(f"Error processing interactions: {str(e)}")
-            st.error("❌ Failed to process interactions. Check terminal for details.")
+            return False
+
+        return False
 
 def get_fg_updater(batch_size: int = 50):
     """Get or create FeatureGroupUpdater instance"""
