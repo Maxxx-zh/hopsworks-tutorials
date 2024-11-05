@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+from IPython import get_ipython
 
 def need_download_modules():
     if 'google.colab' in str(get_ipython()):
