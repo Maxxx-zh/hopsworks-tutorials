@@ -1,9 +1,0 @@
-streamlit==1.28.2
-pandas==2.2.0
-Pillow==10.2.0
-requests==2.31.0
-sentence-transformers==2.2.2
-langchain==0.2.6
-langchain-openai==0.1.14
-python-dotenv==1.0.1
-hopsworks
