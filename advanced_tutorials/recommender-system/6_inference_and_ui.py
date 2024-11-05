@@ -1,5 +1,19 @@
 import streamlit as st
 import os
+
+def need_download_modules():
+    if 'google.colab' in str(get_ipython()):
+        return True
+    return False
+
+if need_download_modules():
+    print("📥 Downloading modules")
+    os.system('mkdir -p functions')
+    os.system('cd functions && wget https://raw.githubusercontent.com/Maxxx-zh/hopsworks-tutorials/refs/heads/FSTORE-1565/advanced_tutorials/recommender-system/functions/feature_group_updater.py')
+    os.system('cd functions && wget https://raw.githubusercontent.com/Maxxx-zh/hopsworks-tutorials/refs/heads/FSTORE-1565/advanced_tutorials/recommender-system/functions/interaction_tracker.py')
+    os.system('cd functions && wget https://raw.githubusercontent.com/Maxxx-zh/hopsworks-tutorials/refs/heads/FSTORE-1565/advanced_tutorials/recommender-system/functions/recommenders.py')
+    os.system('cd functions && wget https://raw.githubusercontent.com/Maxxx-zh/hopsworks-tutorials/refs/heads/FSTORE-1565/advanced_tutorials/recommender-system/functions/utils.py')
+
 from functions.utils import get_deployments
 from functions.recommenders import customer_recommendations, llm_recommendations
 from functions.interaction_tracker import get_tracker
