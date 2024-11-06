@@ -73,26 +73,26 @@ def show_interaction_dashboard(tracker, fg_updater, page_selection):
 
         interaction_data = tracker.get_interactions_data()
         
-        if not interaction_data.empty:
-            col1, col2, col3 = st.columns(3)
-            total = len(interaction_data)
-            clicks = len(interaction_data[interaction_data['interaction_score'] == 1])
-            purchases = len(interaction_data[interaction_data['interaction_score'] == 2])
+        #if not interaction_data.empty:
+        col1, col2, col3 = st.columns(3)
+        total = len(interaction_data)
+        clicks = len(interaction_data[interaction_data['interaction_score'] == 1])
+        purchases = len(interaction_data[interaction_data['interaction_score'] == 2])
             
-            col1.metric("Total", total)
-            col2.metric("Clicks", clicks)
-            col3.metric("Purchases", purchases)
+        col1.metric("Total", total)
+        col2.metric("Clicks", clicks)
+        col3.metric("Purchases", purchases)
 
-            # Show progress towards auto-insertion
-            if total < 50:
-                st.progress(total/50, f"Collecting interactions ({total}/50 for auto-insertion)")
+        # Show progress towards auto-insertion
+        #if total < 50:
+        #    st.progress(total/50, f"Collecting interactions ({total}/50 for auto-insertion)")
+
+        st.dataframe(interaction_data, hide_index=True)
             
-            st.dataframe(interaction_data, hide_index=True)
-            
-            if st.button("📥 Insert Interactions", key='insert_button', type="primary"):
-                fg_updater.process_interactions(tracker, force=True)
-        else:
-            st.info("No interactions recorded yet")
+        #if st.button("📥 Insert Interactions", key='insert_button', type="primary"):
+        fg_updater.process_interactions(tracker, force=True)
+        #else:
+        #    st.info("No interactions recorded yet")
 
 def handle_llm_page(articles_fv, customer_id):
     """Handle LLM recommendations page"""

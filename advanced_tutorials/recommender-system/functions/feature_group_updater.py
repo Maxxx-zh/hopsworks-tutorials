@@ -103,7 +103,7 @@ class FeatureGroupUpdater:
                 logger.info(f"Inserting {n_interactions} interactions...")
                 
                 with st.spinner(f"Inserting {n_interactions} interactions..."):
-                    st.session_state.feature_group.insert(new_interactions)
+                    st.session_state.feature_group.multi_part_insert(new_interactions)
                     st.session_state.last_processed_timestamp = int(new_interactions['t_dat'].max())
                 
                 logger.info("Insertion completed successfully")
