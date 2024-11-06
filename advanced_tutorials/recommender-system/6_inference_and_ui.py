@@ -43,7 +43,7 @@ def initialize_page():
 def initialize_services():
     """Initialize tracker, updater, and deployments"""
     tracker = get_tracker()
-    fg_updater = get_fg_updater(batch_size=50)
+    fg_updater = get_fg_updater()
     
     logger.info("Initializing deployments...")
     with st.sidebar:
@@ -62,7 +62,6 @@ def initialize_services():
 def show_interaction_dashboard(tracker, fg_updater, page_selection):
     """Display interaction data and controls"""
     with st.sidebar.expander("📊 Interaction Dashboard", expanded=True):
-        # OpenAI API Key input moved here for better visibility
         if page_selection == "LLM Recommendations":
             api_key = st.text_input("🔑 OpenAI API Key:", type="password", key="openai_api_key")
             if api_key:
@@ -73,7 +72,6 @@ def show_interaction_dashboard(tracker, fg_updater, page_selection):
 
         interaction_data = tracker.get_interactions_data()
         
-        #if not interaction_data.empty:
         col1, col2, col3 = st.columns(3)
         total = len(interaction_data)
         clicks = len(interaction_data[interaction_data['interaction_score'] == 1])
@@ -83,16 +81,8 @@ def show_interaction_dashboard(tracker, fg_updater, page_selection):
         col2.metric("Clicks", clicks)
         col3.metric("Purchases", purchases)
 
-        # Show progress towards auto-insertion
-        #if total < 50:
-        #    st.progress(total/50, f"Collecting interactions ({total}/50 for auto-insertion)")
-
         st.dataframe(interaction_data, hide_index=True)
-            
-        #if st.button("📥 Insert Interactions", key='insert_button', type="primary"):
         fg_updater.process_interactions(tracker, force=True)
-        #else:
-        #    st.info("No interactions recorded yet")
 
 def handle_llm_page(articles_fv, customer_id):
     """Handle LLM recommendations page"""
@@ -102,18 +92,8 @@ def handle_llm_page(articles_fv, customer_id):
         st.warning("Please provide your OpenAI API Key in the Interaction Dashboard")
 
 def process_pending_interactions(tracker, fg_updater):
-    """Process pending interactions with proper notification"""
-    interaction_count = len(tracker.get_interactions_data())
-    
-    if interaction_count >= 50:
-        with st.spinner("🔄 Auto-inserting interactions..."):
-            success = fg_updater.process_interactions(tracker, force=True)
-            if success:
-                tracker.clear_interactions()  # Clear interactions after successful insertion
-                st.toast(f"✅ Auto-inserted {interaction_count} interactions", icon="📥")
-                logger.info(f"Auto-inserted {interaction_count} interactions")
-    else:
-        fg_updater.process_interactions(tracker, force=False)
+    """Process interactions immediately"""
+    fg_updater.process_interactions(tracker, force=True)
 
 def main():
     # Initialize page

@@ -9,6 +9,7 @@ from .utils import (
     get_item_image_url
 )
 from .interaction_tracker import get_tracker
+from .feature_group_updater import get_fg_updater
 
 
 def initialize_llm_state():
@@ -35,17 +36,27 @@ def display_item(item_id, score, articles_fv, customer_id, tracker, source):
         if st.button("📝 View Details", key=details_key):
             tracker.track(customer_id, item_id, 'click')
             with st.expander("Item Details", expanded=True):
-                description = process_description(
-                    articles_fv.get_feature_vector({'article_id': item_id})[-2]
-                )
+                description = process_description(articles_fv.get_feature_vector({'article_id': item_id})[-2])
                 st.write(description)
         
         # Buy button
         buy_key = f'{source}_buy_{item_id}'
         if st.button("🛒 Buy", key=buy_key):
+            # Track interaction
             tracker.track(customer_id, item_id, 'purchase')
-            st.success(f"✅ Item {item_id} purchased!")
-            st.experimental_rerun()
+            
+            # Insert transaction
+            fg_updater = get_fg_updater()
+            purchase_data = {
+                'customer_id': customer_id,
+                'article_id': item_id
+            }
+            
+            if fg_updater.insert_transaction(purchase_data):
+                st.success(f"✅ Item {item_id} purchased!")
+                st.experimental_rerun()
+            else:
+                st.error("Failed to record transaction, but purchase was tracked")
 
 def customer_recommendations(articles_fv, ranking_deployment, query_model_deployment, customer_id):
     """Handle customer-based recommendations"""
@@ -189,27 +200,43 @@ def get_fashion_recommendations(user_input, fashion_chain, gender):
 
 
 def display_llm_item(item_data, col, articles_fv, customer_id, tracker):
-    """Display a single LLM recommendation item without score"""
+    """Display a single LLM recommendation item and handle interactions"""
     description, item = item_data
     item_id = str(item[0])
     
-    with col:
-        image_url = get_item_image_url(item_id, articles_fv)
-        img = fetch_and_process_image(image_url)
-        
-        if img:
-            st.image(img, use_column_width=True)
-            
-            if st.button("📝 View Details", key=f'llm_details_{item_id}'):
-                tracker.track(customer_id, item_id, 'click')
-                with st.expander("Item Details", expanded=True):
-                    st.write(process_description(item[-2]))
-            
-            if st.button("🛒 Buy", key=f'llm_buy_{item_id}'):
-                tracker.track(customer_id, item_id, 'purchase')
-                st.success(f"✅ Item {item_id} purchased!")
-                return True
+    image_url = get_item_image_url(item_id, articles_fv)
+    img = fetch_and_process_image(image_url)
+    
+    if not img:
         return False
+        
+    col.image(img, use_column_width=True)
+    
+    # View Details button
+    if col.button("📝 View Details", key=f'llm_details_{item_id}'):
+        tracker.track(customer_id, item_id, 'click')
+        with col.expander("Item Details", expanded=True):
+            col.write(process_description(item[-2]))
+    
+    # Buy button
+    if col.button("🛒 Buy", key=f'llm_buy_{item_id}'):
+        # Track interaction
+        tracker.track(customer_id, item_id, 'purchase')
+        
+        # Insert transaction
+        fg_updater = get_fg_updater()
+        purchase_data = {
+            'customer_id': customer_id,
+            'article_id': item_id
+        }
+        
+        if fg_updater.insert_transaction(purchase_data):
+            st.success(f"✅ Item {item_id} purchased!")
+            return True
+        else:
+            st.error("Failed to record transaction, but purchase was tracked")
+    
+    return False
     
     
 def display_category_items(emoji, category, items, articles_fv, customer_id, tracker):
@@ -333,34 +360,55 @@ def llm_recommendations(articles_fv, api_key, customer_id):
     need_rerun = False
     
     for emoji, category, items in st.session_state.llm_recommendations:
+        if not items:
+            continue
+            
         st.markdown(f"## {emoji} {category}")
+        st.write(f"**Recommendation: {items[0][0]}**")
         
-        if items:
-            st.write(f"**Recommendation: {items[0][0]}**")
-            
-            remaining_items = []
-            cols = st.columns(min(5, len(items)))
-            
-            for idx, item_data in enumerate(items):
-                if tracker.should_show_item(customer_id, item_data[1][0]):
-                    with cols[idx]:
-                        if display_llm_item(item_data, cols[idx], articles_fv, customer_id, tracker):
-                            need_rerun = True
-                            # Add replacement item if available
-                            extra_items = st.session_state.llm_extra_items.get(category, [])
-                            if extra_items:
-                                new_item = extra_items.pop(0)
-                                remaining_items.append(new_item)
-                                st.session_state.llm_extra_items[category] = extra_items
-                        else:
-                            remaining_items.append(item_data)
-            
-            if remaining_items:
-                updated_recommendations.append((emoji, category, remaining_items))
+        # Calculate number of columns needed
+        n_items = len(items)
+        n_cols = min(5, n_items)
+        cols = st.columns(n_cols)
         
+        # Track which items to keep
+        remaining_items = []
+        category_updated = False
+        
+        # Display items
+        for idx, item_data in enumerate(items):
+            item_id = item_data[1][0]
+            
+            # Only show if not purchased
+            if tracker.should_show_item(customer_id, item_id):
+                with cols[idx % n_cols]:
+                    # Display and handle purchase
+                    was_purchased = display_llm_item(item_data, cols[idx % n_cols], articles_fv, customer_id, tracker)
+                    
+                    if was_purchased:
+                        # Item was purchased, try to get replacement
+                        category_updated = True
+                        extra_items = st.session_state.llm_extra_items.get(category, [])
+                        
+                        if extra_items:
+                            # Add replacement item from extras
+                            new_item = extra_items.pop(0)
+                            remaining_items.append(new_item)
+                            st.session_state.llm_extra_items[category] = extra_items
+                    else:
+                        # Keep the item in display
+                        remaining_items.append(item_data)
+        
+        # If we still have items to display in this category
+        if remaining_items:
+            updated_recommendations.append((emoji, category, remaining_items))
+            
+        if category_updated:
+            need_rerun = True
+            
         st.markdown("---")
     
-    # Update recommendations if changes occurred
+    # Update recommendations and rerun if needed
     if need_rerun:
         st.session_state.llm_recommendations = updated_recommendations
         st.experimental_rerun()

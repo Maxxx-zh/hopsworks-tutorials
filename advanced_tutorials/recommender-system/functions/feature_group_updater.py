@@ -4,51 +4,113 @@ import streamlit as st
 import hopsworks
 from typing import Optional
 import logging
+import math
+import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class FeatureGroupUpdater:
-    def __init__(self, batch_size: int = 50):
-        """Initialize the FeatureGroup updater.
-        
-        Args:
-            batch_size: Number of interactions before automatic insertion
-        """
-        self.batch_size = batch_size
-        self._initialize_feature_group()
+    def __init__(self):
+        """Initialize the FeatureGroup updater"""
+        self._initialize_feature_groups()
     
-    def _initialize_feature_group(self) -> None:
-        """Initialize connection to Hopsworks Feature Group"""
+    def _initialize_feature_groups(self) -> None:
+        """Initialize connection to Hopsworks Feature Groups"""
         try:
             if 'feature_group' not in st.session_state:
-                logger.info("📡 Initializing Hopsworks Feature Group connection...")
+                logger.info("📡 Initializing Hopsworks Feature Groups connection...")
                 project = hopsworks.login()
                 fs = project.get_feature_store()
+                
+                # Initialize interactions feature group
                 st.session_state.feature_group = fs.get_feature_group(
                     name="interactions",
                     version=1,
                 )
-                logger.info("✅ Feature Group connection established")
-
-            # Initialize last processed timestamp if not exists
-            if 'last_processed_timestamp' not in st.session_state:
-                st.session_state.last_processed_timestamp = int(datetime.now().timestamp())
-                logger.info(f"⛳️ Initialized last_processed_timestamp: {st.session_state.last_processed_timestamp}")
+                
+                # Initialize transactions feature group
+                st.session_state.transactions_fg = fs.get_feature_group(
+                    name="transactions",
+                    version=1,
+                )
+                logger.info("✅ Feature Groups connection established")
 
         except Exception as e:
-            logger.error(f"Failed to initialize Feature Group connection: {str(e)}")
-            st.error("❌ Failed to connect to Feature Group. Check terminal for details.")
+            logger.error(f"Failed to initialize Feature Groups connection: {str(e)}")
+            st.error("❌ Failed to connect to Feature Groups. Check terminal for details.")
             raise
 
+    def _prepare_transaction_for_insertion(self, purchase_data: dict) -> pd.DataFrame:
+        """Prepare transaction data for insertion into transactions feature group"""
+        try:
+            timestamp = datetime.now()
+            
+            transaction = {
+                't_dat': int(timestamp.timestamp()),
+                'customer_id': str(purchase_data['customer_id']),
+                'article_id': str(purchase_data['article_id']),
+                'price': round(random.uniform(10, 140), 2),
+                'sales_channel_id': 2,
+                'year': timestamp.year,
+                'month': timestamp.month,
+                'day': timestamp.day,
+                'day_of_week': timestamp.weekday(),
+                'month_sin': math.sin(2 * math.pi * timestamp.month / 12),
+                'month_cos': math.cos(2 * math.pi * timestamp.month / 12)
+            }
+            
+            df = pd.DataFrame([transaction])
+            
+            # Ensure correct data types
+            df['t_dat'] = df['t_dat'].astype('int64')
+            df['customer_id'] = df['customer_id'].astype(str)
+            df['article_id'] = df['article_id'].astype(str)
+            df['price'] = df['price'].astype('float64')
+            df['sales_channel_id'] = df['sales_channel_id'].astype('int64')
+            df['year'] = df['year'].astype('int32')
+            df['month'] = df['month'].astype('int32')
+            df['day'] = df['day'].astype('int32')
+            df['day_of_week'] = df['day_of_week'].astype('int32')
+            df['month_sin'] = df['month_sin'].astype('float64')
+            df['month_cos'] = df['month_cos'].astype('float64')
+            
+            logger.info(f"Prepared transaction for insertion: {transaction}")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error preparing transaction data: {str(e)}")
+            return None
+
+    def insert_transaction(self, purchase_data: dict) -> bool:
+        """Insert a single transaction into transactions feature group"""
+        try:
+            transaction_df = self._prepare_transaction_for_insertion(purchase_data)
+            
+            if transaction_df is not None:
+                logger.info("Inserting transaction...")
+                with st.spinner("💫 Recording transaction..."):
+                    st.session_state.transactions_fg.multi_part_insert(transaction_df)
+                logger.info("✅ Transaction inserted successfully")
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to insert transaction: {str(e)}")
+            st.error("❌ Failed to insert transaction. Check terminal for details.")
+
+        return False
+
     def _prepare_interactions_for_insertion(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare interactions dataframe to match Feature Group schema"""
+        """Prepare interactions dataframe for insertion"""
         if df is None or df.empty:
             return None
 
         try:
-            # Create a new DataFrame with required columns and types
+            # Convert timestamp to Unix timestamp if needed
+            if not pd.api.types.is_integer_dtype(df['t_dat']):
+                df['t_dat'] = pd.to_datetime(df['t_dat']).astype('int64') // 10**9
+
             prepared_df = pd.DataFrame({
                 't_dat': df['t_dat'].astype('int64'),
                 'customer_id': df['customer_id'].astype(str),
@@ -57,84 +119,27 @@ class FeatureGroupUpdater:
                 'prev_article_id': df['prev_article_id'].astype(str)
             })
 
-            logger.info(f"Prepared {len(prepared_df)} interactions for insertion")
+            logger.info(f"Prepared interaction for insertion")
             return prepared_df
 
         except Exception as e:
-            logger.error(f"Error preparing data: {str(e)}")
-            st.error("❌ Failed to prepare data. Check terminal for details.")
+            logger.error(f"Error preparing interaction data: {str(e)}")
             return None
 
-    def _get_new_interactions(self, tracker) -> Optional[pd.DataFrame]:
-        """Get new interactions since last processing"""
+    def process_interactions(self, tracker, force: bool = False) -> bool:
+        """Process and insert interactions immediately"""
         try:
             interactions_df = tracker.get_interactions_data()
             
             if interactions_df.empty:
-                logger.info("No interactions found")
-                return None
-
-            # Convert t_dat to Unix timestamp if needed
-            if not pd.api.types.is_integer_dtype(interactions_df['t_dat']):
-                interactions_df['t_dat'] = pd.to_datetime(interactions_df['t_dat']).astype('int64') // 10**9
-
-            # Filter new interactions
-            new_interactions = interactions_df[
-                interactions_df['t_dat'] > st.session_state.last_processed_timestamp
-            ]
-
-            if new_interactions.empty:
-                logger.info("No new interactions found")
-                return None
-
-            logger.info(f"Found {len(new_interactions)} new interactions")
-            return self._prepare_interactions_for_insertion(new_interactions)
-
-        except Exception as e:
-            logger.error(f"Error getting new interactions: {str(e)}")
-            st.error("❌ Failed to get new interactions. Check terminal for details.")
-            return None
-
-    def insert_interactions(self, new_interactions: pd.DataFrame) -> bool:
-        """Insert interactions into Feature Group"""
-        try:
-            if new_interactions is not None and not new_interactions.empty:
-                n_interactions = len(new_interactions)
-                logger.info(f"Inserting {n_interactions} interactions...")
-                
-                with st.spinner(f"Inserting {n_interactions} interactions..."):
-                    st.session_state.feature_group.multi_part_insert(new_interactions)
-                    st.session_state.last_processed_timestamp = int(new_interactions['t_dat'].max())
-                
-                logger.info("Insertion completed successfully")
-                return True
-
-        except Exception as e:
-            logger.error(f"Failed to insert interactions: {str(e)}")
-            st.error("❌ Failed to insert interactions. Check terminal for details.")
-
-        return False
-    
-    def process_interactions(self, tracker, force: bool = False) -> bool:
-        """Process interactions from the tracker and insert into Feature Group"""
-        try:
-            # Get new interactions
-            new_interactions = self._get_new_interactions(tracker)
-
-            if new_interactions is None:
-                if force:
-                    logger.info("ℹ️ No new interactions to insert")
                 return False
 
-            # Insert if forced or batch size reached
-            if force or len(new_interactions) >= self.batch_size:
-                logger.info("Starting insertion...")
-                if self.insert_interactions(new_interactions):
-                    logger.info(f"✅ Successfully inserted {len(new_interactions)} interactions")
-                    return True
-                else:
-                    logger.error("Failed to insert interactions")
-                    return False
+            prepared_df = self._prepare_interactions_for_insertion(interactions_df)
+            if prepared_df is not None:
+                logger.info("Inserting interactions...")
+                st.session_state.feature_group.multi_part_insert(prepared_df)
+                logger.info("✅ Interactions inserted successfully")
+                return True
 
         except Exception as e:
             logger.error(f"Error processing interactions: {str(e)}")
@@ -142,8 +147,8 @@ class FeatureGroupUpdater:
 
         return False
 
-def get_fg_updater(batch_size: int = 50):
+def get_fg_updater():
     """Get or create FeatureGroupUpdater instance"""
     if 'fg_updater' not in st.session_state:
-        st.session_state.fg_updater = FeatureGroupUpdater(batch_size=batch_size)
+        st.session_state.fg_updater = FeatureGroupUpdater()
     return st.session_state.fg_updater
